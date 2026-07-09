@@ -4,14 +4,14 @@ import { minimist } from './minimist';
 import { parseCommand } from './command';
 import { commands } from './commands';
 import { TextOutput, JsonOutput } from './output';
-import { loadConfig, maskConfig, writeRcConfig, rcFilePath } from '../config/config';
+import { loadConfig, maskConfig, writeRcConfig, rcFilePath, getRcConfig, setActiveProfile, createProfile, listProfiles } from '../config/config';
 import { createAuthProvider } from '../api/auth';
 import { ZendeskClient } from '../api/client';
 import type { Output } from './output';
 import type { MinimistArgs } from './minimist';
 import type { AnyCommandSchema } from './command';
 
-const globalOptions = ['json', 'raw', 'help', 'h', 'version', 'v', 's', 'subdomain', 'e', 'email', 'token', 'password', 'oauth-token'];
+const globalOptions = ['json', 'raw', 'help', 'h', 'version', 'v', 's', 'subdomain', 'e', 'email', 'token', 'password', 'oauth-token', 'p', 'profile'];
 const booleanGlobalOptions = ['help', 'json', 'raw', 'version', 'v', 'h'];
 
 export async function program() {
@@ -22,6 +22,7 @@ export async function program() {
 
   if (args.s) { args.subdomain = args.s; delete args.s; }
   if (args.e) { args.email = args.e; delete args.e; }
+  if (args.p) { args.profile = args.p; delete args.p; }
 
   const output: Output = args.json ? new JsonOutput() : new TextOutput();
   const commandName = args._[0];
@@ -76,6 +77,15 @@ function handleGlobalFlags(
 
 function handleConfigCommands(commandName: string, args: MinimistArgs, output: Output): boolean {
   if (commandName === 'config-show') {
+    const profileName = args.profile as string || undefined;
+    if (profileName) {
+      const rc = getRcConfig();
+      const profile = rc.profiles[profileName];
+      if (!profile)
+        output.error(`Profile '${profileName}' not found`);
+      console.log(output.format({ active: rc.active, profile: profileName, ...profile }));
+      return true;
+    }
     const config = loadConfig(args);
     console.log(output.format(maskConfig(config)));
     return true;
@@ -86,13 +96,44 @@ function handleConfigCommands(commandName: string, args: MinimistArgs, output: O
     const value = args._[2];
     if (!key || !value)
       output.error('Usage: zendesk-cli config-set <key> <value>');
-    writeRcConfig(key, value);
-    console.log(output.format({ [key]: key === 'token' || key === 'password' ? '****' : value }));
+    const profileName = args.profile as string || undefined;
+    const result = writeRcConfig(key, value, profileName);
+    console.log(output.format(result));
     return true;
   }
 
   if (commandName === 'config-path') {
     console.log(output.format(rcFilePath));
+    return true;
+  }
+
+  if (commandName === 'config-list') {
+    const rc = getRcConfig();
+    const profiles = Object.entries(rc.profiles).map(([name, p]) => ({
+      name,
+      active: name === rc.active,
+      subdomain: p.subdomain || '(not set)',
+      email: p.email || '(not set)',
+    }));
+    console.log(output.format(profiles));
+    return true;
+  }
+
+  if (commandName === 'config-use') {
+    const name = args._[1];
+    if (!name)
+      output.error('Usage: zendesk-cli config-use <name>');
+    setActiveProfile(name);
+    console.log(output.format({ active: name }));
+    return true;
+  }
+
+  if (commandName === 'config-new') {
+    const name = args._[1];
+    if (!name)
+      output.error('Usage: zendesk-cli config-new <name>');
+    createProfile(name);
+    console.log(output.format({ created: name }));
     return true;
   }
 

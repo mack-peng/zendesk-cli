@@ -3,6 +3,19 @@ import * as path from 'path';
 import * as os from 'os';
 import type { MinimistArgs } from '../cli/minimist';
 
+export interface ProfileConfig {
+  subdomain: string;
+  email: string;
+  token?: string;
+  password?: string;
+  oauthToken?: string;
+}
+
+interface RcFile {
+  active: string;
+  profiles: Record<string, ProfileConfig>;
+}
+
 export interface Config {
   subdomain: string;
   email: string;
@@ -14,22 +27,48 @@ export interface Config {
   raw: boolean;
 }
 
+export const rcFilePath = path.join(os.homedir(), '.zendeskrc');
+
+function readRcFile(): RcFile {
+  try {
+    const content = fs.readFileSync(rcFilePath, 'utf-8');
+    return JSON.parse(content);
+  } catch {
+    return { active: 'default', profiles: {} };
+  }
+}
+
+function writeRcFile(rc: RcFile): void {
+  fs.writeFileSync(rcFilePath, JSON.stringify(rc, null, 2) + '\n');
+}
+
+function resolveProfileName(args: MinimistArgs): string {
+  const fromArgs = (args.p as string) || (args.profile as string);
+  const fromEnv = process.env.ZENDESK_PROFILE;
+  if (fromArgs)
+    return fromArgs;
+  if (fromEnv)
+    return fromEnv;
+  return readRcFile().active;
+}
+
+function resolveProfile(args: MinimistArgs): ProfileConfig {
+  const name = resolveProfileName(args);
+  const rc = readRcFile();
+  const profile = rc.profiles[name];
+  if (!profile)
+    throw new Error(`Profile '${name}' not found. Run: zendesk-cli config-new ${name}`);
+  return profile;
+}
+
 export function loadConfig(args: MinimistArgs): Config {
-  const env = {
-    subdomain: process.env.ZENDESK_SUBDOMAIN,
-    email: process.env.ZENDESK_EMAIL,
-    token: process.env.ZENDESK_TOKEN,
-    password: process.env.ZENDESK_PASSWORD,
-    oauthToken: process.env.ZENDESK_OAUTH_TOKEN,
-  };
+  const profile = resolveProfile(args);
 
-  const fileConfig = readRcFile();
-
-  const subdomain = (args.s as string) || (args.subdomain as string) || env.subdomain || fileConfig.subdomain;
-  const email = (args.e as string) || (args.email as string) || env.email || fileConfig.email;
-  const token = (args.token as string) || env.token || fileConfig.token;
-  const password = (args.password as string) || env.password || fileConfig.password;
-  const oauthToken = (args['oauth-token'] as string) || env.oauthToken || fileConfig.oauthToken;
+  const subdomain = (args.s as string) || (args.subdomain as string) || profile.subdomain;
+  const email = (args.e as string) || (args.email as string) || profile.email;
+  const token = (args.token as string) || profile.token;
+  const password = (args.password as string) || profile.password;
+  const oauthToken = (args['oauth-token'] as string) || profile.oauthToken;
 
   const mode: 'api-token' | 'basic' | 'oauth' = oauthToken
     ? 'oauth'
@@ -69,20 +108,43 @@ export function maskConfig(config: Config): Record<string, string> {
   };
 }
 
-export const rcFilePath = path.join(os.homedir(), '.zendeskrc');
-
-function readRcFile(): Record<string, string> {
-  try {
-    const content = fs.readFileSync(rcFilePath, 'utf-8');
-    return JSON.parse(content);
-  } catch {
-    return {};
-  }
+export function writeRcConfig(key: string, value: string, profileName?: string): Record<string, string> {
+  const rc = readRcFile();
+  const name = profileName || rc.active;
+  if (!rc.profiles[name])
+    rc.profiles[name] = { subdomain: '', email: '' };
+  const p = rc.profiles[name];
+  (p as unknown as Record<string, string>)[key] = value;
+  writeRcFile(rc);
+  return { profile: name, [key]: key === 'token' || key === 'password' ? '****' : value };
 }
 
-export function writeRcConfig(key: string, value: string): Record<string, string> {
-  const config = readRcFile();
-  config[key] = value;
-  fs.writeFileSync(rcFilePath, JSON.stringify(config, null, 2) + '\n');
-  return config;
+export function getRcConfig(): { active: string; profiles: Record<string, ProfileConfig> } {
+  const rc = readRcFile();
+  return { active: rc.active, profiles: rc.profiles };
+}
+
+export function setActiveProfile(name: string): void {
+  const rc = readRcFile();
+  if (!rc.profiles[name])
+    throw new Error(`Profile '${name}' not found`);
+  rc.active = name;
+  writeRcFile(rc);
+}
+
+export function createProfile(name: string): void {
+  const rc = readRcFile();
+  if (rc.profiles[name])
+    throw new Error(`Profile '${name}' already exists`);
+  rc.profiles[name] = { subdomain: '', email: '' };
+  writeRcFile(rc);
+}
+
+export function listProfiles(): string[] {
+  const rc = readRcFile();
+  return Object.keys(rc.profiles);
+}
+
+export function resolveActiveProfileName(): string {
+  return readRcFile().active;
 }

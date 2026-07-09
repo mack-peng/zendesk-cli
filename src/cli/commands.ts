@@ -880,6 +880,33 @@ const configPath = declareCommand({
   api: { method: 'GET', path: '' },
 });
 
+const configList = declareCommand({
+  name: 'config-list',
+  category: 'config',
+  description: 'List all profiles',
+  api: { method: 'GET', path: '' },
+});
+
+const configUse = declareCommand({
+  name: 'config-use',
+  category: 'config',
+  description: 'Switch active profile',
+  args: z.object({
+    name: z.string().describe('Profile name'),
+  }),
+  api: { method: 'GET', path: '' },
+});
+
+const configNew = declareCommand({
+  name: 'config-new',
+  category: 'config',
+  description: 'Create a new profile',
+  args: z.object({
+    name: z.string().describe('Profile name'),
+  }),
+  api: { method: 'GET', path: '' },
+});
+
 // ── Export ──
 
 const commandsArray: AnyCommandSchema[] = [
@@ -915,7 +942,7 @@ const commandsArray: AnyCommandSchema[] = [
   suspendedList, suspendedRecover, suspendedDelete,
   incrementalTickets,
   // config
-  configShow, configSet, configPath,
+  configShow, configSet, configPath, configList, configUse, configNew,
 ];
 
 export const commands = Object.fromEntries(commandsArray.map(cmd => [cmd.name, cmd]));
