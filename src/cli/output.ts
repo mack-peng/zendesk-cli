@@ -12,30 +12,27 @@ export class TextOutput implements Output {
   format(data: any): string {
     if (data === null || data === undefined)
       return '(empty)';
-    if (Array.isArray(data)) {
-      if (data.length === 0)
-        return '(empty list)';
-      const columns = Object.keys(data[0] || {});
-      const rows = data.map((item: any) =>
-        columns.map((col) => String(item[col] ?? ''))
-      );
-      rows.unshift(columns);
-      const widths = columns.map((_, ci) =>
-        Math.max(...rows.map((r) => String(r[ci]).length))
-      );
-      return rows
-        .map((row, ri) => {
-          const line = row
-            .map((cell, ci) => String(cell).padEnd(widths[ci]))
-            .join('  ');
-          if (ri === 0) return line + '\n' + widths.map((w) => '-'.repeat(w)).join('  ');
-          return line;
-        })
-        .join('\n');
-    }
+    if (Array.isArray(data))
+      return this._formatTable(data);
     if (typeof data === 'object')
       return JSON.stringify(data, null, 2);
     return String(data);
+  }
+
+  private _formatTable(rows: Record<string, any>[]): string {
+    if (rows.length === 0)
+      return '(empty list)';
+    const columns = Object.keys(rows[0] || {});
+    const cells = rows.map((item: any) => columns.map((col) => String(item[col] ?? '')));
+    cells.unshift(columns);
+    const widths = columns.map((_, ci) => Math.max(...cells.map((r) => String(r[ci]).length)));
+    return cells
+      .map((row, ri) => {
+        const line = row.map((cell, ci) => String(cell).padEnd(widths[ci])).join('  ');
+        if (ri === 0) return line + '\n' + widths.map((w) => '-'.repeat(w)).join('  ');
+        return line;
+      })
+      .join('\n');
   }
 
   error(message: string): never {

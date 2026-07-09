@@ -18,34 +18,18 @@ export async function program() {
   const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', 'package.json'), 'utf-8'));
   const help = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'help.json'), 'utf-8'));
 
-  const argv = process.argv.slice(2);
-  const args: MinimistArgs = minimist(argv, {
-    boolean: [...help.booleanOptions, ...booleanGlobalOptions],
-    string: ['_'],
-  });
+  const args = parseArgs(help);
 
   if (args.s) { args.subdomain = args.s; delete args.s; }
   if (args.e) { args.email = args.e; delete args.e; }
 
   const output: Output = args.json ? new JsonOutput() : new TextOutput();
   const commandName = args._[0];
-
-  if (args.version || args.v) {
-    output.version(pkg.version);
-    process.exit(0);
-  }
-
   const cmdEntry = commandName && help.commands[commandName];
   const command: AnyCommandSchema | undefined = commands[commandName];
 
-  if (args.help || args.h || !commandName) {
-    if (cmdEntry) {
-      output.help(cmdEntry.help);
-    } else {
-      output.help(help.global);
-    }
-    process.exit(0);
-  }
+  if (handleGlobalFlags(args, commandName, cmdEntry, help, output, pkg.version))
+    return;
 
   if (!cmdEntry || !command)
     output.error(`Unknown command: ${commandName}`);
@@ -53,12 +37,48 @@ export async function program() {
   validateFlags(args, cmdEntry);
   validateArgs(args, cmdEntry);
 
-  // ── Local config commands ──
+  if (handleConfigCommands(commandName, args, output))
+    return;
 
+  await executeApiCommand(command, cmdEntry, args, output);
+}
+
+function parseArgs(help: any): MinimistArgs {
+  return minimist(process.argv.slice(2), {
+    boolean: [...help.booleanOptions, ...booleanGlobalOptions],
+    string: ['_'],
+  });
+}
+
+function handleGlobalFlags(
+  args: MinimistArgs,
+  commandName: string | undefined,
+  cmdEntry: any,
+  help: any,
+  output: Output,
+  version: string
+): boolean {
+  if (args.version || args.v) {
+    output.version(version);
+    process.exit(0);
+  }
+
+  if (args.help || args.h || !commandName) {
+    if (cmdEntry)
+      output.help(cmdEntry.help);
+    else
+      output.help(help.global);
+    process.exit(0);
+  }
+
+  return false;
+}
+
+function handleConfigCommands(commandName: string, args: MinimistArgs, output: Output): boolean {
   if (commandName === 'config-show') {
     const config = loadConfig(args);
-    output.format(maskConfig(config));
-    return;
+    console.log(output.format(maskConfig(config)));
+    return true;
   }
 
   if (commandName === 'config-set') {
@@ -67,17 +87,24 @@ export async function program() {
     if (!key || !value)
       output.error('Usage: zendesk-cli config-set <key> <value>');
     writeRcConfig(key, value);
-    output.format({ [key]: key === 'token' || key === 'password' ? '****' : value });
-    return;
+    console.log(output.format({ [key]: key === 'token' || key === 'password' ? '****' : value }));
+    return true;
   }
 
   if (commandName === 'config-path') {
-    output.format(rcFilePath);
-    return;
+    console.log(output.format(rcFilePath));
+    return true;
   }
 
-  // ── API commands ──
+  return false;
+}
 
+async function executeApiCommand(
+  command: AnyCommandSchema,
+  cmdEntry: any,
+  args: MinimistArgs,
+  output: Output
+) {
   try {
     const config = loadConfig(args);
     const parsed = parseCommand(command, args as Record<string, string> & { _: string[] });
@@ -94,31 +121,39 @@ export async function program() {
       : command.api.path;
 
     const client = new ZendeskClient(config.subdomain, auth);
-    const rawQueryParams = extractQueryParams(args, cmdEntry);
-    const transformed = command.transformRequest ? command.transformRequest(parsed) : parsed;
-
-    let result: any;
-
-    if (command.list) {
-      const queryParams = { ...rawQueryParams, ...filterQueryParams(transformed) };
-      result = await client.list(command.api.method, pathStr, queryParams);
-    } else {
-      const method = command.api.method;
-      const isBodyMethod = method !== 'GET' && method !== 'DELETE';
-      const queryParams = isBodyMethod
-        ? rawQueryParams
-        : { ...rawQueryParams, ...filterQueryParams(transformed) };
-      const apiOptions: any = { queryParams };
-      if (isBodyMethod)
-        apiOptions.body = transformed;
-      result = await client.request(method, pathStr, apiOptions);
-    }
-
+    const result = await dispatchRequest(command, cmdEntry, args, parsed, client, pathStr);
     const finalResult = command.transformResponse ? command.transformResponse(result) : result;
     console.log(output.format(finalResult));
   } catch (e: any) {
     output.error(e.message || String(e));
   }
+}
+
+async function dispatchRequest(
+  command: AnyCommandSchema,
+  cmdEntry: any,
+  args: MinimistArgs,
+  parsed: Record<string, any>,
+  client: ZendeskClient,
+  pathStr: string
+): Promise<any> {
+  const rawQueryParams = extractQueryParams(args, cmdEntry);
+  const transformed = command.transformRequest ? command.transformRequest(parsed) : parsed;
+
+  if (command.list) {
+    const queryParams = { ...rawQueryParams, ...filterQueryParams(transformed) };
+    return client.list(command.api.method, pathStr, queryParams);
+  }
+
+  const method = command.api.method;
+  const isBodyMethod = method !== 'GET' && method !== 'DELETE';
+  const queryParams = isBodyMethod
+    ? rawQueryParams
+    : { ...rawQueryParams, ...filterQueryParams(transformed) };
+  const apiOptions: any = { queryParams };
+  if (isBodyMethod)
+    apiOptions.body = transformed;
+  return client.request(method, pathStr, apiOptions);
 }
 
 function extractQueryParams(args: MinimistArgs, cmdEntry: any): Record<string, any> {
