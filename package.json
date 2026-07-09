@@ -1,0 +1,23 @@
+{
+  "name": "zendesk-cli",
+  "version": "0.1.0",
+  "description": "Zendesk API CLI for AI agents and shell automation",
+  "main": "dist/index.js",
+  "bin": {
+    "zendesk-cli": "./bin/zendesk-cli.js"
+  },
+  "scripts": {
+    "build": "node scripts/build.js",
+    "typecheck": "tsc --noEmit",
+    "lint": "tsc --noEmit"
+  },
+  "dependencies": {
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.23.0",
+    "typescript": "^5.5.0"
+  },
+  "license": "MIT"
+}
