@@ -24,7 +24,7 @@ const ticketList = declareCommand({
     status: z.enum(['new','open','pending','hold','solved','closed']).optional().describe('filter by ticket status'),
     'per-page': numberArg.optional().describe('tickets per page (max 100)'),
   }),
-  api: { method: 'GET', path: '/api/v2/tickets.json' },
+  api: { method: 'GET', path: '/api/v2/tickets' },
   transformRequest: ({ 'sort-by': sortBy, 'sort-order': sortOrder, 'per-page': perPage, status, ...rest }) => ({
     ...rest,
     ...(sortBy ? { sort_by: sortBy } : {}),
@@ -39,7 +39,7 @@ const ticketListRecent = declareCommand({
   name: 'ticket-list-recent',
   category: 'tickets',
   description: 'List recently updated tickets',
-  api: { method: 'GET', path: '/api/v2/tickets/recent.json' },
+  api: { method: 'GET', path: '/api/v2/tickets/recent' },
   list: true,
 });
 
@@ -48,7 +48,7 @@ const ticketShow = declareCommand({
   category: 'tickets',
   description: 'Show a single ticket',
   args: z.object({ id: numberArg.describe('Ticket ID') }),
-  api: { method: 'GET', path: ({ id }) => `/api/v2/tickets/${id}.json` },
+  api: { method: 'GET', path: ({ id }) => `/api/v2/tickets/${id}` },
   transformResponse: (data: any) => data.ticket,
 });
 
@@ -78,7 +78,7 @@ const ticketCreate = declareCommand({
     'requester-id': numberArg.optional().describe('requester user ID'),
     status: z.enum(['new','open','pending','hold','solved','closed']).optional().describe('ticket status'),
   }),
-  api: { method: 'POST', path: '/api/v2/tickets.json' },
+  api: { method: 'POST', path: '/api/v2/tickets' },
   transformRequest: ({ subject, body, priority, type, tags, 'assignee-id': assigneeId, 'group-id': groupId, 'requester-id': requesterId, status }) => ({
     ticket: {
       subject,
@@ -93,6 +93,19 @@ const ticketCreate = declareCommand({
     },
   }),
   transformResponse: (data: any) => data.ticket,
+});
+
+const ticketCreateMany = declareCommand({
+  name: 'ticket-create-many',
+  category: 'tickets',
+  description: 'Bulk create tickets (up to 100)',
+  args: z.object({
+    file: z.string().describe('JSON file with tickets array'),
+  }),
+  jsonFile: true,
+  api: { method: 'POST', path: '/api/v2/tickets/create_many' },
+  transformRequest: (data: any) => Array.isArray(data) ? { tickets: data } : data,
+  transformResponse: (data: any) => data.job_status,
 });
 
 const ticketUpdate = declareCommand({
@@ -110,7 +123,7 @@ const ticketUpdate = declareCommand({
     comment: z.string().optional().describe('Add a public comment'),
     'private-comment': z.string().optional().describe('Add an internal note'),
   }),
-  api: { method: 'PUT', path: ({ id }) => `/api/v2/tickets/${id}.json` },
+  api: { method: 'PUT', path: ({ id }) => `/api/v2/tickets/${id}` },
   transformRequest: ({ subject, priority, status, 'assignee-id': assigneeId, 'group-id': groupId, tags, comment, 'private-comment': privateComment, id, ...rest }) => {
     const ticket: Record<string, any> = {};
     if (subject) ticket.subject = subject;
@@ -141,7 +154,7 @@ const ticketUpdateMany = declareCommand({
     'assignee-id': numberArg.optional(),
     'group-id': numberArg.optional(),
   }),
-  api: { method: 'PUT', path: '/api/v2/tickets/update_many.json' },
+  api: { method: 'PUT', path: '/api/v2/tickets/update_many' },
   transformRequest: ({ ids, status, 'assignee-id': assigneeId, 'group-id': groupId }) => ({
     ticket_ids: ids.split(',').map(Number),
     ticket: {
@@ -157,7 +170,7 @@ const ticketDelete = declareCommand({
   category: 'tickets',
   description: 'Delete a ticket',
   args: z.object({ id: numberArg.describe('Ticket ID') }),
-  api: { method: 'DELETE', path: ({ id }) => `/api/v2/tickets/${id}.json` },
+  api: { method: 'DELETE', path: ({ id }) => `/api/v2/tickets/${id}` },
 });
 
 const ticketDeleteMany = declareCommand({
@@ -176,7 +189,7 @@ const ticketMerge = declareCommand({
     id: numberArg.describe('Source ticket ID'),
     'target-id': numberArg.describe('Target ticket ID'),
   }),
-  api: { method: 'POST', path: ({ id }) => `/api/v2/tickets/${id}/merge.json` },
+  api: { method: 'POST', path: ({ id }) => `/api/v2/tickets/${id}/merge` },
   transformRequest: ({ id, 'target-id': targetId, ...rest }) => ({
     ids: [targetId],
     target_comment: 'Tickets merged',
@@ -189,7 +202,7 @@ const ticketRelated = declareCommand({
   category: 'tickets',
   description: 'List related ticket information',
   args: z.object({ id: numberArg.describe('Ticket ID') }),
-  api: { method: 'GET', path: ({ id }) => `/api/v2/tickets/${id}/related.json` },
+  api: { method: 'GET', path: ({ id }) => `/api/v2/tickets/${id}/related` },
   transformResponse: (data: any) => data.ticket_related,
 });
 
@@ -200,7 +213,7 @@ const commentList = declareCommand({
   category: 'comments',
   description: 'List comments for a ticket',
   args: z.object({ 'ticket-id': numberArg.describe('Ticket ID') }),
-  api: { method: 'GET', path: ({ 'ticket-id': ticketId }) => `/api/v2/tickets/${ticketId}/comments.json` },
+  api: { method: 'GET', path: ({ 'ticket-id': ticketId }) => `/api/v2/tickets/${ticketId}/comments` },
   transformResponse: (data: any) => data.comments,
   list: true,
 });
@@ -218,7 +231,7 @@ const commentCreate = declareCommand({
     private: z.boolean().optional().describe('Make comment internal note'),
     'upload-tokens': z.string().optional().describe('Comma-separated attachment upload tokens'),
   }),
-  api: { method: 'PUT', path: ({ 'ticket-id': ticketId }) => `/api/v2/tickets/${ticketId}.json` },
+  api: { method: 'PUT', path: ({ 'ticket-id': ticketId }) => `/api/v2/tickets/${ticketId}` },
   transformRequest: ({ 'ticket-id': ticketId, body, public: isPublic, private: isPrivate, 'upload-tokens': uploadTokens }) => ({
     ticket: {
       comment: {
@@ -241,7 +254,7 @@ const commentUpdate = declareCommand({
     body: z.string().describe('New comment body'),
   }),
   api: { method: 'PUT', path: ({ 'ticket-id': ticketId, 'comment-id': commentId }) =>
-    `/api/v2/tickets/${ticketId}/comments/${commentId}.json` },
+    `/api/v2/tickets/${ticketId}/comments/${commentId}` },
   transformRequest: ({ body }) => ({ comment: { body } }),
 });
 
@@ -255,8 +268,20 @@ const commentRedact = declareCommand({
     text: z.string().describe('Text to replace redacted content with'),
   }),
   api: { method: 'PUT', path: ({ 'ticket-id': ticketId, 'comment-id': commentId }) =>
-    `/api/v2/tickets/${ticketId}/comments/${commentId}/redact.json` },
+    `/api/v2/tickets/${ticketId}/comments/${commentId}/redact` },
   transformRequest: ({ text }) => ({ text }),
+});
+
+const commentDelete = declareCommand({
+  name: 'comment-delete',
+  category: 'comments',
+  description: 'Delete a comment from a ticket',
+  args: z.object({
+    'ticket-id': numberArg.describe('Ticket ID'),
+    'comment-id': numberArg.describe('Comment ID'),
+  }),
+  api: { method: 'DELETE', path: ({ 'ticket-id': ticketId, 'comment-id': commentId }) =>
+    `/api/v2/tickets/${ticketId}/comments/${commentId}` },
 });
 
 // ── Users ──
@@ -269,7 +294,7 @@ const userList = declareCommand({
     role: z.enum(['end-user','agent','admin']).optional().describe('user role'),
     'per-page': numberArg.optional().describe('users per page'),
   }),
-  api: { method: 'GET', path: '/api/v2/users.json' },
+  api: { method: 'GET', path: '/api/v2/users' },
   transformRequest: ({ role, 'per-page': perPage, ...rest }) => ({
     ...rest,
     ...(role ? { role } : {}),
@@ -283,7 +308,7 @@ const userShow = declareCommand({
   category: 'users',
   description: 'Show a single user',
   args: z.object({ id: z.union([numberArg, z.string()]).describe('User ID or "me"') }),
-  api: { method: 'GET', path: ({ id }) => `/api/v2/users/${id}.json` },
+  api: { method: 'GET', path: ({ id }) => `/api/v2/users/${id}` },
   transformResponse: (data: any) => data.user,
 });
 
@@ -291,7 +316,7 @@ const userMe = declareCommand({
   name: 'user-me',
   category: 'users',
   description: 'Show the currently authenticated user',
-  api: { method: 'GET', path: '/api/v2/users/me.json' },
+  api: { method: 'GET', path: '/api/v2/users/me' },
   transformResponse: (data: any) => data.user,
 });
 
@@ -319,7 +344,7 @@ const userCreate = declareCommand({
     phone: z.string().optional().describe('phone number'),
     locale: z.string().optional().describe('locale, e.g. en-US'),
   }),
-  api: { method: 'POST', path: '/api/v2/users.json' },
+  api: { method: 'POST', path: '/api/v2/users' },
   transformRequest: ({ name: userName, email, role, verified, 'organization-id': orgId, phone, locale }) => ({
     user: {
       name: userName,
@@ -332,6 +357,19 @@ const userCreate = declareCommand({
     },
   }),
   transformResponse: (data: any) => data.user,
+});
+
+const userCreateMany = declareCommand({
+  name: 'user-create-many',
+  category: 'users',
+  description: 'Bulk create users (up to 100)',
+  args: z.object({
+    file: z.string().describe('JSON file with users array'),
+  }),
+  jsonFile: true,
+  api: { method: 'POST', path: '/api/v2/users/create_many' },
+  transformRequest: (data: any) => Array.isArray(data) ? { users: data } : data,
+  transformResponse: (data: any) => data.job_status,
 });
 
 const userUpdate = declareCommand({
@@ -348,7 +386,7 @@ const userUpdate = declareCommand({
     locale: z.string().optional().describe('locale, e.g. en-US'),
     verified: z.boolean().optional().describe('mark as verified'),
   }),
-  api: { method: 'PUT', path: ({ id }) => `/api/v2/users/${id}.json` },
+  api: { method: 'PUT', path: ({ id }) => `/api/v2/users/${id}` },
   transformRequest: ({ id, name: userName, email, role, 'organization-id': orgId, phone, locale, verified }) => {
     const user: Record<string, any> = {};
     if (userName) user.name = userName;
@@ -363,12 +401,62 @@ const userUpdate = declareCommand({
   transformResponse: (data: any) => data.user,
 });
 
+const userUpdateMany = declareCommand({
+  name: 'user-update-many',
+  category: 'users',
+  description: 'Bulk update users',
+  args: z.object({ ids: z.string().describe('Comma-separated user IDs') }),
+  options: z.object({
+    name: z.string().optional().describe('display name'),
+    email: z.string().optional().describe('email address'),
+    role: z.enum(['end-user','agent','admin']).optional().describe('user role'),
+    'organization-id': numberArg.optional().describe('organization ID'),
+    verified: z.boolean().optional().describe('mark as verified'),
+    suspended: z.boolean().optional().describe('suspend users'),
+  }),
+  api: { method: 'PUT', path: ({ ids }) => `/api/v2/users/update_many?ids=${ids}` },
+  transformRequest: ({ ids, name, email, role, 'organization-id': orgId, verified, suspended }) => {
+    const user: Record<string, any> = {};
+    if (name) user.name = name;
+    if (email) user.email = email;
+    if (role) user.role = role;
+    if (orgId) user.organization_id = orgId;
+    if (verified !== undefined) user.verified = verified;
+    if (suspended !== undefined) user.suspended = suspended;
+    return { user };
+  },
+  transformResponse: (data: any) => data.job_status,
+});
+
 const userDelete = declareCommand({
   name: 'user-delete',
   category: 'users',
   description: 'Delete a user',
   args: z.object({ id: numberArg.describe('User ID') }),
-  api: { method: 'DELETE', path: ({ id }) => `/api/v2/users/${id}.json` },
+  api: { method: 'DELETE', path: ({ id }) => `/api/v2/users/${id}` },
+});
+
+const userDeleteMany = declareCommand({
+  name: 'user-delete-many',
+  category: 'users',
+  description: 'Bulk delete users',
+  args: z.object({ ids: z.string().describe('Comma-separated user IDs') }),
+  api: { method: 'DELETE', path: ({ ids }) => `/api/v2/users/destroy_many?ids=${ids}` },
+  transformResponse: (data: any) => data.job_status,
+});
+
+const userMerge = declareCommand({
+  name: 'user-merge',
+  category: 'users',
+  description: 'Merge a user into another',
+  args: z.object({
+    'source-id': numberArg.describe('Source user ID (merged from)'),
+    'target-id': numberArg.describe('Target user ID (merged into)'),
+  }),
+  api: { method: 'PUT', path: ({ 'source-id': sourceId }) => `/api/v2/users/${sourceId}/merge` },
+  transformRequest: ({ 'source-id': sourceId, 'target-id': targetId }) => ({
+    user: { id: targetId },
+  }),
 });
 
 const userSearch = declareCommand({
@@ -381,8 +469,17 @@ const userSearch = declareCommand({
     email: z.string().optional(),
     'per-page': numberArg.optional(),
   }),
-  api: { method: 'GET', path: '/api/v2/users/search.json' },
+  api: { method: 'GET', path: '/api/v2/users/search' },
   list: true,
+});
+
+const userAutocomplete = declareCommand({
+  name: 'user-autocomplete',
+  category: 'users',
+  description: 'Autocomplete user names',
+  args: z.object({ name: z.string().describe('Name prefix to search') }),
+  api: { method: 'GET', path: '/api/v2/users/autocomplete' },
+  transformResponse: (data: any) => data.users,
 });
 
 // ── Organizations ──
@@ -394,7 +491,7 @@ const orgList = declareCommand({
   options: z.object({
     'per-page': numberArg.optional(),
   }),
-  api: { method: 'GET', path: '/api/v2/organizations.json' },
+  api: { method: 'GET', path: '/api/v2/organizations' },
   list: true,
 });
 
@@ -403,7 +500,7 @@ const orgShow = declareCommand({
   category: 'organizations',
   description: 'Show a single organization',
   args: z.object({ id: numberArg.describe('Organization ID') }),
-  api: { method: 'GET', path: ({ id }) => `/api/v2/organizations/${id}.json` },
+  api: { method: 'GET', path: ({ id }) => `/api/v2/organizations/${id}` },
   transformResponse: (data: any) => data.organization,
 });
 
@@ -418,7 +515,7 @@ const orgCreate = declareCommand({
     tags: z.string().optional().describe('Comma-separated tags'),
     notes: z.string().optional(),
   }),
-  api: { method: 'POST', path: '/api/v2/organizations.json' },
+  api: { method: 'POST', path: '/api/v2/organizations' },
   transformRequest: ({ name, 'external-id': externalId, 'group-id': groupId, tags, notes }) => ({
     organization: {
       name,
@@ -442,7 +539,7 @@ const orgUpdate = declareCommand({
     tags: z.string().optional(),
     notes: z.string().optional(),
   }),
-  api: { method: 'PUT', path: ({ id }) => `/api/v2/organizations/${id}.json` },
+  api: { method: 'PUT', path: ({ id }) => `/api/v2/organizations/${id}` },
   transformRequest: ({ id, name, 'external-id': externalId, tags, notes }) => {
     const org: Record<string, any> = {};
     if (name) org.name = name;
@@ -459,7 +556,7 @@ const orgDelete = declareCommand({
   category: 'organizations',
   description: 'Delete an organization',
   args: z.object({ id: numberArg.describe('Organization ID') }),
-  api: { method: 'DELETE', path: ({ id }) => `/api/v2/organizations/${id}.json` },
+  api: { method: 'DELETE', path: ({ id }) => `/api/v2/organizations/${id}` },
 });
 
 const orgSearch = declareCommand({
@@ -467,7 +564,7 @@ const orgSearch = declareCommand({
   category: 'organizations',
   description: 'Search organizations by external_id',
   args: z.object({ 'external-id': z.string().describe('External organization ID') }),
-  api: { method: 'GET', path: '/api/v2/organizations/search.json' },
+  api: { method: 'GET', path: '/api/v2/organizations/search' },
   transformResponse: (data: any) => data.organizations,
 });
 
@@ -477,7 +574,7 @@ const groupList = declareCommand({
   name: 'group-list',
   category: 'groups',
   description: 'List all groups',
-  api: { method: 'GET', path: '/api/v2/groups.json' },
+  api: { method: 'GET', path: '/api/v2/groups' },
   transformResponse: (data: any) => data.groups,
   list: true,
 });
@@ -487,7 +584,7 @@ const groupShow = declareCommand({
   category: 'groups',
   description: 'Show a single group',
   args: z.object({ id: numberArg.describe('Group ID') }),
-  api: { method: 'GET', path: ({ id }) => `/api/v2/groups/${id}.json` },
+  api: { method: 'GET', path: ({ id }) => `/api/v2/groups/${id}` },
   transformResponse: (data: any) => data.group,
 });
 
@@ -496,7 +593,7 @@ const groupCreate = declareCommand({
   category: 'groups',
   description: 'Create a group',
   args: z.object({ name: z.string().describe('Group name') }),
-  api: { method: 'POST', path: '/api/v2/groups.json' },
+  api: { method: 'POST', path: '/api/v2/groups' },
   transformRequest: ({ name }) => ({ group: { name } }),
   transformResponse: (data: any) => data.group,
 });
@@ -507,7 +604,7 @@ const groupUpdate = declareCommand({
   description: 'Update a group',
   args: z.object({ id: numberArg.describe('Group ID') }),
   options: z.object({ name: z.string().optional() }),
-  api: { method: 'PUT', path: ({ id }) => `/api/v2/groups/${id}.json` },
+  api: { method: 'PUT', path: ({ id }) => `/api/v2/groups/${id}` },
   transformRequest: ({ id, name }) => ({ group: { ...(name ? { name } : {}) } }),
   transformResponse: (data: any) => data.group,
 });
@@ -517,7 +614,7 @@ const groupDelete = declareCommand({
   category: 'groups',
   description: 'Delete a group',
   args: z.object({ id: numberArg.describe('Group ID') }),
-  api: { method: 'DELETE', path: ({ id }) => `/api/v2/groups/${id}.json` },
+  api: { method: 'DELETE', path: ({ id }) => `/api/v2/groups/${id}` },
 });
 
 // ── Search ──
@@ -533,7 +630,7 @@ const search = declareCommand({
     'sort-order': z.enum(['asc','desc']).optional().describe('sort direction'),
     'per-page': numberArg.optional().describe('results per page'),
   }),
-  api: { method: 'GET', path: '/api/v2/search.json' },
+  api: { method: 'GET', path: '/api/v2/search' },
   transformRequest: ({ query, type, 'sort-by': sortBy, 'sort-order': sortOrder, 'per-page': perPage }) => {
     const typeQuery = type ? `type:${type} ` : '';
     return {
@@ -553,7 +650,7 @@ const viewList = declareCommand({
   name: 'view-list',
   category: 'views',
   description: 'List all views',
-  api: { method: 'GET', path: '/api/v2/views.json' },
+  api: { method: 'GET', path: '/api/v2/views' },
   transformResponse: (data: any) => data.views,
 });
 
@@ -562,7 +659,7 @@ const viewShow = declareCommand({
   category: 'views',
   description: 'Show a view',
   args: z.object({ id: numberArg.describe('View ID') }),
-  api: { method: 'GET', path: ({ id }) => `/api/v2/views/${id}.json` },
+  api: { method: 'GET', path: ({ id }) => `/api/v2/views/${id}` },
   transformResponse: (data: any) => data.view,
 });
 
@@ -576,7 +673,7 @@ const viewExecute = declareCommand({
     'sort-order': z.enum(['asc','desc']).optional().describe('sort direction'),
     'per-page': numberArg.optional().describe('tickets per page'),
   }),
-  api: { method: 'GET', path: ({ id }) => `/api/v2/views/${id}/execute.json` },
+  api: { method: 'GET', path: ({ id }) => `/api/v2/views/${id}/execute` },
   transformResponse: (data: any) => data.rows || data.tickets,
   list: true,
 });
@@ -586,7 +683,7 @@ const viewCount = declareCommand({
   category: 'views',
   description: 'Count tickets in a view',
   args: z.object({ id: numberArg.describe('View ID') }),
-  api: { method: 'GET', path: ({ id }) => `/api/v2/views/${id}/count.json` },
+  api: { method: 'GET', path: ({ id }) => `/api/v2/views/${id}/count` },
   transformResponse: (data: any) => data.view_count,
 });
 
@@ -606,7 +703,7 @@ const attachmentShow = declareCommand({
   category: 'tickets',
   description: 'Show attachment metadata',
   args: z.object({ id: numberArg.describe('Attachment ID') }),
-  api: { method: 'GET', path: ({ id }) => `/api/v2/attachments/${id}.json` },
+  api: { method: 'GET', path: ({ id }) => `/api/v2/attachments/${id}` },
   transformResponse: (data: any) => data.attachment,
 });
 
@@ -621,7 +718,7 @@ const attachmentUpload = declareCommand({
     filename: z.string().optional().describe('Override filename'),
     token: z.boolean().optional().describe('Return only upload token'),
   }),
-  api: { method: 'POST', path: '/api/v2/uploads.json' },
+  api: { method: 'POST', path: '/api/v2/uploads' },
   transformRequest: ({ file: filePath, filename: fileName }) => ({
     file: filePath,
     ...(fileName ? { filename: fileName } : {}),
@@ -633,7 +730,7 @@ const attachmentDelete = declareCommand({
   category: 'tickets',
   description: 'Delete an attachment',
   args: z.object({ id: numberArg.describe('Attachment ID') }),
-  api: { method: 'DELETE', path: ({ id }) => `/api/v2/attachments/${id}.json` },
+  api: { method: 'DELETE', path: ({ id }) => `/api/v2/attachments/${id}` },
 });
 
 // ── Ticket Fields ──
@@ -642,7 +739,7 @@ const ticketFieldList = declareCommand({
   name: 'ticket-field-list',
   category: 'tickets',
   description: 'List all ticket fields',
-  api: { method: 'GET', path: '/api/v2/ticket_fields.json' },
+  api: { method: 'GET', path: '/api/v2/ticket_fields' },
   transformResponse: (data: any) => data.ticket_fields,
 });
 
@@ -651,7 +748,7 @@ const ticketFieldShow = declareCommand({
   category: 'tickets',
   description: 'Show a ticket field',
   args: z.object({ id: numberArg.describe('Field ID') }),
-  api: { method: 'GET', path: ({ id }) => `/api/v2/ticket_fields/${id}.json` },
+  api: { method: 'GET', path: ({ id }) => `/api/v2/ticket_fields/${id}` },
   transformResponse: (data: any) => data.ticket_field,
 });
 
@@ -661,7 +758,7 @@ const ticketFormList = declareCommand({
   name: 'ticket-form-list',
   category: 'tickets',
   description: 'List all ticket forms',
-  api: { method: 'GET', path: '/api/v2/ticket_forms.json' },
+  api: { method: 'GET', path: '/api/v2/ticket_forms' },
   transformResponse: (data: any) => data.ticket_forms,
 });
 
@@ -670,7 +767,7 @@ const ticketFormShow = declareCommand({
   category: 'tickets',
   description: 'Show a ticket form',
   args: z.object({ id: numberArg.describe('Form ID') }),
-  api: { method: 'GET', path: ({ id }) => `/api/v2/ticket_forms/${id}.json` },
+  api: { method: 'GET', path: ({ id }) => `/api/v2/ticket_forms/${id}` },
   transformResponse: (data: any) => data.ticket_form,
 });
 
@@ -680,7 +777,7 @@ const tagList = declareCommand({
   name: 'tag-list',
   category: 'tickets',
   description: 'List all tags',
-  api: { method: 'GET', path: '/api/v2/tags.json' },
+  api: { method: 'GET', path: '/api/v2/tags' },
   transformResponse: (data: any) => data.tags,
 });
 
@@ -690,7 +787,7 @@ const macroList = declareCommand({
   name: 'macro-list',
   category: 'tickets',
   description: 'List all macros',
-  api: { method: 'GET', path: '/api/v2/macros.json' },
+  api: { method: 'GET', path: '/api/v2/macros' },
   transformResponse: (data: any) => data.macros,
 });
 
@@ -699,7 +796,7 @@ const macroShow = declareCommand({
   category: 'tickets',
   description: 'Show a macro',
   args: z.object({ id: numberArg.describe('Macro ID') }),
-  api: { method: 'GET', path: ({ id }) => `/api/v2/macros/${id}.json` },
+  api: { method: 'GET', path: ({ id }) => `/api/v2/macros/${id}` },
   transformResponse: (data: any) => data.macro,
 });
 
@@ -711,7 +808,7 @@ const macroApply = declareCommand({
     'ticket-id': numberArg.describe('Ticket ID'),
     'macro-id': numberArg.describe('Macro ID'),
   }),
-  api: { method: 'PUT', path: ({ 'ticket-id': ticketId, 'macro-id': macroId }) => `/api/v2/tickets/${ticketId}/macros/${macroId}/apply.json` },
+  api: { method: 'PUT', path: ({ 'ticket-id': ticketId, 'macro-id': macroId }) => `/api/v2/tickets/${ticketId}/macros/${macroId}/apply` },
   transformRequest: ({ 'ticket-id': ticketId, 'macro-id': macroId }) => ({ macro_id: macroId }),
 });
 
@@ -721,7 +818,7 @@ const suspendedList = declareCommand({
   name: 'suspended-list',
   category: 'tickets',
   description: 'List suspended tickets',
-  api: { method: 'GET', path: '/api/v2/suspended_tickets.json' },
+  api: { method: 'GET', path: '/api/v2/suspended_tickets' },
   transformResponse: (data: any) => data.suspended_tickets,
   list: true,
 });
@@ -731,7 +828,7 @@ const suspendedRecover = declareCommand({
   category: 'tickets',
   description: 'Recover a suspended ticket',
   args: z.object({ id: numberArg.describe('Suspended ticket ID') }),
-  api: { method: 'PUT', path: ({ id }) => `/api/v2/suspended_tickets/${id}/recover.json` },
+  api: { method: 'PUT', path: ({ id }) => `/api/v2/suspended_tickets/${id}/recover` },
   transformResponse: (data: any) => data.ticket,
 });
 
@@ -740,7 +837,7 @@ const suspendedDelete = declareCommand({
   category: 'tickets',
   description: 'Delete a suspended ticket',
   args: z.object({ id: numberArg.describe('Suspended ticket ID') }),
-  api: { method: 'DELETE', path: ({ id }) => `/api/v2/suspended_tickets/${id}.json` },
+  api: { method: 'DELETE', path: ({ id }) => `/api/v2/suspended_tickets/${id}` },
 });
 
 // ── Incremental Exports ──
@@ -750,7 +847,7 @@ const incrementalTickets = declareCommand({
   category: 'tickets',
   description: 'Incrementally export tickets',
   args: z.object({ 'start-time': numberArg.describe('Unix timestamp start') }),
-  api: { method: 'GET', path: '/api/v2/incremental/tickets.json' },
+  api: { method: 'GET', path: '/api/v2/incremental/tickets' },
   list: true,
 });
 
@@ -759,7 +856,7 @@ const incrementalUsers = declareCommand({
   category: 'users',
   description: 'Incrementally export users',
   args: z.object({ 'start-time': numberArg.describe('Unix timestamp start') }),
-  api: { method: 'GET', path: '/api/v2/incremental/users.json' },
+  api: { method: 'GET', path: '/api/v2/incremental/users' },
   list: true,
 });
 
@@ -768,7 +865,7 @@ const incrementalOrgs = declareCommand({
   category: 'organizations',
   description: 'Incrementally export organizations',
   args: z.object({ 'start-time': numberArg.describe('Unix timestamp start') }),
-  api: { method: 'GET', path: '/api/v2/incremental/organizations.json' },
+  api: { method: 'GET', path: '/api/v2/incremental/organizations' },
   list: true,
 });
 
@@ -779,7 +876,7 @@ const identityList = declareCommand({
   category: 'users',
   description: 'List identities for a user',
   args: z.object({ 'user-id': numberArg.describe('User ID') }),
-  api: { method: 'GET', path: ({ 'user-id': userId }) => `/api/v2/users/${userId}/identities.json` },
+  api: { method: 'GET', path: ({ 'user-id': userId }) => `/api/v2/users/${userId}/identities` },
   transformResponse: (data: any) => data.identities,
 });
 
@@ -790,7 +887,7 @@ const groupMembershipList = declareCommand({
   category: 'groups',
   description: 'List group memberships',
   options: z.object({ 'user-id': numberArg.optional(), 'group-id': numberArg.optional() }),
-  api: { method: 'GET', path: '/api/v2/group_memberships.json' },
+  api: { method: 'GET', path: '/api/v2/group_memberships' },
   transformResponse: (data: any) => data.group_memberships,
   list: true,
 });
@@ -803,7 +900,7 @@ const groupMembershipCreate = declareCommand({
     'user-id': numberArg.describe('User ID'),
     'group-id': numberArg.describe('Group ID'),
   }),
-  api: { method: 'POST', path: '/api/v2/group_memberships.json' },
+  api: { method: 'POST', path: '/api/v2/group_memberships' },
   transformRequest: ({ 'user-id': userId, 'group-id': groupId }) => ({
     group_membership: { user_id: userId, group_id: groupId },
   }),
@@ -815,7 +912,7 @@ const groupMembershipDelete = declareCommand({
   category: 'groups',
   description: 'Delete a group membership',
   args: z.object({ id: numberArg.describe('Membership ID') }),
-  api: { method: 'DELETE', path: ({ id }) => `/api/v2/group_memberships/${id}.json` },
+  api: { method: 'DELETE', path: ({ id }) => `/api/v2/group_memberships/${id}` },
 });
 
 // ── Organization Memberships ──
@@ -825,7 +922,7 @@ const orgMembershipList = declareCommand({
   category: 'organizations',
   description: 'List organization memberships',
   options: z.object({ 'user-id': numberArg.optional(), 'org-id': numberArg.optional() }),
-  api: { method: 'GET', path: '/api/v2/organization_memberships.json' },
+  api: { method: 'GET', path: '/api/v2/organization_memberships' },
   transformResponse: (data: any) => data.organization_memberships,
   list: true,
 });
@@ -838,7 +935,7 @@ const orgMembershipCreate = declareCommand({
     'user-id': numberArg.describe('User ID'),
     'org-id': numberArg.describe('Organization ID'),
   }),
-  api: { method: 'POST', path: '/api/v2/organization_memberships.json' },
+  api: { method: 'POST', path: '/api/v2/organization_memberships' },
   transformRequest: ({ 'user-id': userId, 'org-id': orgId }) => ({
     organization_membership: { user_id: userId, organization_id: orgId },
   }),
@@ -850,7 +947,7 @@ const orgMembershipDelete = declareCommand({
   category: 'organizations',
   description: 'Delete an organization membership',
   args: z.object({ id: numberArg.describe('Membership ID') }),
-  api: { method: 'DELETE', path: ({ id }) => `/api/v2/organization_memberships/${id}.json` },
+  api: { method: 'DELETE', path: ({ id }) => `/api/v2/organization_memberships/${id}` },
 });
 
 // ── Config ──
@@ -907,19 +1004,29 @@ const configNew = declareCommand({
   api: { method: 'GET', path: '' },
 });
 
+const ticketThread = declareCommand({
+  name: 'ticket-thread',
+  category: 'tickets',
+  description: 'Show ticket with all comments',
+  args: z.object({ id: numberArg.describe('Ticket ID') }),
+  api: { method: 'GET', path: ({ id }) => `/api/v2/tickets/${id}` },
+});
+
 // ── Export ──
 
 const commandsArray: AnyCommandSchema[] = [
   // tickets
   ticketList, ticketListRecent, ticketShow, ticketShowMany,
-  ticketCreate, ticketUpdate, ticketUpdateMany,
-  ticketDelete, ticketDeleteMany, ticketMerge, ticketRelated,
+  ticketCreate, ticketCreateMany, ticketUpdate, ticketUpdateMany,
+  ticketDelete, ticketDeleteMany, ticketMerge, ticketRelated, ticketThread,
   // attachments
   attachmentShow, attachmentUpload, attachmentDelete,
   // comments
-  commentList, commentCreate, commentUpdate, commentRedact,
+  commentList, commentCreate, commentUpdate, commentRedact, commentDelete,
   // users
-  userList, userShow, userMe, userShowMany, userCreate, userUpdate, userDelete, userSearch,
+  userList, userShow, userMe, userShowMany, userCreate, userCreateMany,
+  userUpdate, userUpdateMany, userDelete, userDeleteMany, userMerge, userSearch,
+  userAutocomplete,
   identityList,
   incrementalUsers,
   // organizations

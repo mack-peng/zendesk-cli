@@ -4,47 +4,51 @@ import { minimist } from './minimist';
 import { parseCommand } from './command';
 import { commands } from './commands';
 import { TextOutput, JsonOutput } from './output';
-import { loadConfig, maskConfig, writeRcConfig, rcFilePath, getRcConfig, setActiveProfile, createProfile, listProfiles } from '../config/config';
+import { loadConfig, maskConfig, writeRcConfig, rcFilePath, getRcConfig, setActiveProfile, createProfile } from '../config/config';
 import { createAuthProvider } from '../api/auth';
 import { ZendeskClient } from '../api/client';
 import type { Output } from './output';
 import type { MinimistArgs } from './minimist';
-import type { AnyCommandSchema } from './command';
+import type { AnyCommandSchema, HelpData, HelpEntry } from './command';
+import type { Config } from '../config/config';
 
 const globalOptions = ['json', 'raw', 'help', 'h', 'version', 'v', 's', 'subdomain', 'e', 'email', 'token', 'password', 'oauth-token', 'p', 'profile'];
 const booleanGlobalOptions = ['help', 'json', 'raw', 'version', 'v', 'h'];
 
 export async function program() {
   const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', 'package.json'), 'utf-8'));
-  const help = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'help.json'), 'utf-8'));
+  const help: HelpData = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'help.json'), 'utf-8'));
 
-  const args = parseArgs(help);
+  const rawArgs = parseArgs(help);
+  if (rawArgs.s) { rawArgs.subdomain = rawArgs.s; delete rawArgs.s; }
+  if (rawArgs.e) { rawArgs.email = rawArgs.e; delete rawArgs.e; }
+  if (rawArgs.p) { rawArgs.profile = rawArgs.p; delete rawArgs.p; }
 
-  if (args.s) { args.subdomain = args.s; delete args.s; }
-  if (args.e) { args.email = args.e; delete args.e; }
-  if (args.p) { args.profile = args.p; delete args.p; }
+  const output: Output = rawArgs.json
+    ? new JsonOutput()
+    : new TextOutput(!!rawArgs.raw);
 
-  const output: Output = args.json ? new JsonOutput() : new TextOutput();
-  const commandName = args._[0];
-  const cmdEntry = commandName && help.commands[commandName];
+  const commandName = rawArgs._[0];
+  const cmdEntry = commandName ? help.commands[commandName] : undefined;
   const command: AnyCommandSchema | undefined = commands[commandName];
 
-  if (handleGlobalFlags(args, commandName, cmdEntry, help, output, pkg.version))
-    return;
+  handleGlobalFlags(rawArgs, commandName, cmdEntry, help, output, pkg.version);
 
   if (!cmdEntry || !command)
     output.error(`Unknown command: ${commandName}`);
 
-  validateFlags(args, cmdEntry);
-  validateArgs(args, cmdEntry);
+  validateFlags(rawArgs, cmdEntry);
 
-  if (handleConfigCommands(commandName, args, output))
+  if (handleConfigCommands(commandName, command, rawArgs, output))
     return;
 
-  await executeApiCommand(command, cmdEntry, args, output);
+  if (await handleThreadCommand(commandName, command, rawArgs, output))
+    return;
+
+  await executeApiCommand(command, cmdEntry, rawArgs, output);
 }
 
-function parseArgs(help: any): MinimistArgs {
+function parseArgs(help: HelpData): MinimistArgs {
   return minimist(process.argv.slice(2), {
     boolean: [...help.booleanOptions, ...booleanGlobalOptions],
     string: ['_'],
@@ -54,161 +58,202 @@ function parseArgs(help: any): MinimistArgs {
 function handleGlobalFlags(
   args: MinimistArgs,
   commandName: string | undefined,
-  cmdEntry: any,
-  help: any,
+  cmdEntry: HelpEntry | undefined,
+  help: HelpData,
   output: Output,
   version: string
-): boolean {
+): void {
   if (args.version || args.v) {
     output.version(version);
     process.exit(0);
   }
 
   if (args.help || args.h || !commandName) {
-    if (cmdEntry)
-      output.help(cmdEntry.help);
-    else
-      output.help(help.global);
+    output.help(cmdEntry ? cmdEntry.help : help.global);
     process.exit(0);
+  }
+}
+
+function setupClient(args: MinimistArgs): { config: Config; client: ZendeskClient } {
+  const config = loadConfig(args);
+  const auth = createAuthProvider({
+    mode: config.mode,
+    email: config.email,
+    token: config.token,
+    password: config.password,
+    oauthToken: config.oauthToken,
+  });
+  const client = new ZendeskClient(config.subdomain, auth);
+  return { config, client };
+}
+
+function handleConfigCommands(
+  commandName: string,
+  command: AnyCommandSchema,
+  args: MinimistArgs,
+  output: Output
+): boolean {
+  const cmdArgs = splitArgs(args);
+
+  try {
+    const parsed = parseCommand(command, cmdArgs as Record<string, string> & { _: string[] });
+
+    switch (commandName) {
+      case 'config-show': {
+        const profileName = args.profile as string || undefined;
+        if (profileName) {
+          const rc = getRcConfig();
+          const profile = rc.profiles[profileName];
+          if (!profile)
+            output.error(`Profile '${profileName}' not found`);
+          const masked = maskConfig({
+            subdomain: profile.subdomain || '',
+            email: profile.email || '',
+            mode: profile.oauthToken ? 'oauth' : profile.token ? 'api-token' : 'basic',
+            token: profile.token,
+            password: profile.password,
+            oauthToken: profile.oauthToken,
+            output: 'text',
+            raw: false,
+          });
+          console.log(output.format({ active: rc.active, profile: profileName, ...masked }));
+          return true;
+        }
+        const { config } = setupClient(args);
+        console.log(output.format(maskConfig(config)));
+        return true;
+      }
+      case 'config-set': {
+        const profileName = args.profile as string || undefined;
+        const result = writeRcConfig(parsed.key, parsed.value, profileName);
+        console.log(output.format(result));
+        return true;
+      }
+      case 'config-path': {
+        console.log(output.format(rcFilePath));
+        return true;
+      }
+      case 'config-list': {
+        const rc = getRcConfig();
+        const profiles = Object.entries(rc.profiles).map(([name, p]) => ({
+          name,
+          active: name === rc.active,
+          subdomain: p.subdomain || '(not set)',
+          email: p.email || '(not set)',
+        }));
+        console.log(output.format(profiles));
+        return true;
+      }
+      case 'config-use': {
+        setActiveProfile(parsed.name);
+        console.log(output.format({ active: parsed.name }));
+        return true;
+      }
+      case 'config-new': {
+        createProfile(parsed.name);
+        console.log(output.format({ created: parsed.name }));
+        return true;
+      }
+    }
+  } catch (e) {
+    output.error(e instanceof Error ? e.message : String(e));
   }
 
   return false;
 }
 
-function handleConfigCommands(commandName: string, args: MinimistArgs, output: Output): boolean {
-  if (commandName === 'config-show') {
-    const profileName = args.profile as string || undefined;
-    if (profileName) {
-      const rc = getRcConfig();
-      const profile = rc.profiles[profileName];
-      if (!profile)
-        output.error(`Profile '${profileName}' not found`);
-      const masked = maskConfig({
-        subdomain: profile.subdomain || '',
-        email: profile.email || '',
-        mode: profile.oauthToken ? 'oauth' : profile.token ? 'api-token' : 'basic',
-        token: profile.token,
-        password: profile.password,
-        oauthToken: profile.oauthToken,
-        output: 'text',
-        raw: false,
-      });
-      console.log(output.format({ active: rc.active, profile: profileName, ...masked }));
-      return true;
-    }
-    const config = loadConfig(args);
-    console.log(output.format(maskConfig(config)));
-    return true;
-  }
+async function handleThreadCommand(
+  commandName: string,
+  command: AnyCommandSchema,
+  args: MinimistArgs,
+  output: Output
+): Promise<boolean> {
+  if (commandName !== 'ticket-thread') return false;
 
-  if (commandName === 'config-set') {
-    const key = args._[1];
-    const value = args._[2];
-    if (!key || !value)
-      output.error('Usage: zcli-ticket config-set <key> <value>');
-    const profileName = args.profile as string || undefined;
-    const result = writeRcConfig(key, value, profileName);
-    console.log(output.format(result));
-    return true;
-  }
+  try {
+    const { client } = setupClient(args);
+    const cmdArgs = splitArgs(args);
+    const parsed = parseCommand(command, cmdArgs as Record<string, string> & { _: string[] });
 
-  if (commandName === 'config-path') {
-    console.log(output.format(rcFilePath));
-    return true;
-  }
+    const pathStr = `/api/v2/tickets/${parsed.id}`;
+    const commentsPath = `/api/v2/tickets/${parsed.id}/comments`;
 
-  if (commandName === 'config-list') {
-    const rc = getRcConfig();
-    const profiles = Object.entries(rc.profiles).map(([name, p]) => ({
-      name,
-      active: name === rc.active,
-      subdomain: p.subdomain || '(not set)',
-      email: p.email || '(not set)',
-    }));
-    console.log(output.format(profiles));
-    return true;
-  }
+    const [ticketResp, comments] = await Promise.all([
+      client.request('GET', pathStr),
+      client.list('GET', commentsPath),
+    ]);
 
-  if (commandName === 'config-use') {
-    const name = args._[1];
-    if (!name)
-      output.error('Usage: zcli-ticket config-use <name>');
-    setActiveProfile(name);
-    console.log(output.format({ active: name }));
-    return true;
-  }
+    const ticket = ticketResp.ticket || ticketResp;
+    ticket._comments = comments;
 
-  if (commandName === 'config-new') {
-    const name = args._[1];
-    if (!name)
-      output.error('Usage: zcli-ticket config-new <name>');
-    createProfile(name);
-    console.log(output.format({ created: name }));
+    console.log(output.format(ticket));
     return true;
+  } catch (e) {
+    output.error(e instanceof Error ? e.message : String(e));
   }
-
-  return false;
 }
 
 async function executeApiCommand(
   command: AnyCommandSchema,
-  cmdEntry: any,
+  cmdEntry: HelpEntry,
   args: MinimistArgs,
   output: Output
 ) {
   try {
-    const config = loadConfig(args);
-    const cmdArgs = stripGlobalOptions(args);
-    const parsed = parseCommand(command, cmdArgs as Record<string, string> & { _: string[] });
-    const auth = createAuthProvider({
-      mode: config.mode,
-      email: config.email,
-      token: config.token,
-      password: config.password,
-      oauthToken: config.oauthToken,
-    });
+    const { client } = setupClient(args);
+    const cmdArgs = splitArgs(args);
+    let parsed = parseCommand(command, cmdArgs as Record<string, string> & { _: string[] });
 
-    const pathStr = typeof command.api.path === 'function'
-      ? (command.api.path as (args: any) => string)(parsed)
-      : command.api.path;
+    if (command.jsonFile && parsed.file) {
+      const raw = JSON.parse(fs.readFileSync(parsed.file, 'utf-8'));
+      parsed = raw;
+    }
 
-    const client = new ZendeskClient(config.subdomain, auth);
-    const result = await dispatchRequest(command, cmdEntry, args, parsed, client, pathStr);
-    const finalResult = command.transformResponse ? command.transformResponse(result) : result;
+    let result: any;
+    if (command.upload) {
+      result = await client.upload(parsed.file, parsed.filename, args.token as boolean || false);
+    } else {
+      const pathStr = typeof command.api.path === 'function'
+        ? (command.api.path as (...a: any[]) => string)(parsed)
+        : command.api.path;
+      result = await dispatchRequest(command, args, parsed, client, pathStr, cmdEntry);
+    }
+
+    const finalResult = (command.list && !command.upload) ? result : (command.transformResponse ? command.transformResponse(result) : result);
     console.log(output.format(finalResult));
-  } catch (e: any) {
-    output.error(e.message || String(e));
+  } catch (e) {
+    output.error(e instanceof Error ? e.message : String(e));
   }
 }
 
 async function dispatchRequest(
   command: AnyCommandSchema,
-  cmdEntry: any,
   args: MinimistArgs,
   parsed: Record<string, any>,
   client: ZendeskClient,
-  pathStr: string
+  pathStr: string,
+  cmdEntry: HelpEntry
 ): Promise<any> {
-  const rawQueryParams = extractQueryParams(args, cmdEntry);
+  const queryFlags = extractQueryFlags(args, cmdEntry);
   const transformed = command.transformRequest ? command.transformRequest(parsed) : parsed;
 
   if (command.list) {
-    const queryParams = { ...rawQueryParams, ...filterQueryParams(transformed) };
+    const queryParams = { ...queryFlags, ...filterQueryParams(transformed) };
     return client.list(command.api.method, pathStr, queryParams);
   }
 
   const method = command.api.method;
   const isBodyMethod = method !== 'GET' && method !== 'DELETE';
   const queryParams = isBodyMethod
-    ? rawQueryParams
-    : { ...rawQueryParams, ...filterQueryParams(transformed) };
-  const apiOptions: any = { queryParams };
+    ? queryFlags
+    : { ...queryFlags, ...filterQueryParams(transformed) };
+  const apiOptions: Record<string, any> = { queryParams };
   if (isBodyMethod)
     apiOptions.body = transformed;
   return client.request(method, pathStr, apiOptions);
 }
 
-function stripGlobalOptions(args: MinimistArgs): MinimistArgs {
+function splitArgs(args: MinimistArgs): MinimistArgs {
   const result: MinimistArgs = { _: args._ };
   for (const key of Object.keys(args)) {
     if (key === '_' || globalOptions.includes(key)) continue;
@@ -217,7 +262,7 @@ function stripGlobalOptions(args: MinimistArgs): MinimistArgs {
   return result;
 }
 
-function extractQueryParams(args: MinimistArgs, cmdEntry: any): Record<string, any> {
+function extractQueryFlags(args: MinimistArgs, cmdEntry: HelpEntry): Record<string, any> {
   const params: Record<string, any> = {};
   const cmdFlags = Object.keys(cmdEntry.flags || {});
   for (const key of Object.keys(args)) {
@@ -247,10 +292,4 @@ function validateFlags(args: MinimistArgs, cmdEntry: { flags: Record<string, 'bo
   }
   if (unknownFlags.length)
     throw new Error(`Unknown option${unknownFlags.length > 1 ? 's' : ''}: ${unknownFlags.map(f => `--${f}`).join(', ')}`);
-}
-
-function validateArgs(args: MinimistArgs, cmdEntry: { args: string[] }) {
-  const positional = args._.slice(1);
-  if (positional.length > cmdEntry.args.length)
-    throw new Error(`error: too many arguments: expected ${cmdEntry.args.length}, received ${positional.length}`);
 }

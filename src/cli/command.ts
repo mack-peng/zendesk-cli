@@ -11,6 +11,22 @@ export type Category =
   | 'views'
   | 'config';
 
+export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+
+export interface HelpEntry {
+  help: string;
+  flags: Record<string, 'boolean' | 'string'>;
+  args: string[];
+  raw?: boolean;
+  list?: boolean;
+}
+
+export interface HelpData {
+  global: string;
+  commands: Record<string, HelpEntry>;
+  booleanOptions: string[];
+}
+
 export type CommandSchema<Args extends zodType.ZodTypeAny, Options extends zodType.ZodTypeAny> = {
   name: string;
   category: Category;
@@ -18,10 +34,12 @@ export type CommandSchema<Args extends zodType.ZodTypeAny, Options extends zodTy
   hidden?: boolean;
   raw?: boolean;
   list?: boolean;
+  upload?: boolean;
+  jsonFile?: boolean;
   args?: Args;
   options?: Options;
   api: {
-    method: 'GET' | 'POST' | 'PUT' | 'DELETE';
+    method: HttpMethod;
     path: string | ((args: z.infer<Args> & z.infer<Options>) => string);
   };
   transformRequest?: (args: z.infer<Args> & z.infer<Options>) => any;

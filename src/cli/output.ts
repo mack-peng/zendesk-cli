@@ -1,5 +1,6 @@
 export interface Output {
   readonly json: boolean;
+  readonly raw: boolean;
   format(data: any): string;
   error(message: string): never;
   help(text: string): void;
@@ -8,8 +9,15 @@ export interface Output {
 
 export class TextOutput implements Output {
   readonly json = false;
+  readonly raw: boolean;
+
+  constructor(raw = false) {
+    this.raw = raw;
+  }
 
   format(data: any): string {
+    if (this.raw)
+      return typeof data === 'string' ? data : JSON.stringify(data);
     if (data === null || data === undefined)
       return '(empty)';
     if (Array.isArray(data))
@@ -51,6 +59,7 @@ export class TextOutput implements Output {
 
 export class JsonOutput implements Output {
   readonly json = true;
+  readonly raw = false;
 
   format(data: any): string {
     return JSON.stringify(data, null, 2);

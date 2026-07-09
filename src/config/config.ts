@@ -29,10 +29,17 @@ export interface Config {
 
 export const rcFilePath = path.join(os.homedir(), '.zendeskrc');
 
+let cachedRc: { rc: RcFile; mtime: number; checked: number } | null = null;
+
 function readRcFile(): RcFile {
   try {
+    const stat = fs.statSync(rcFilePath);
+    if (cachedRc && cachedRc.mtime === stat.mtimeMs)
+      return cachedRc.rc;
     const content = fs.readFileSync(rcFilePath, 'utf-8');
-    return JSON.parse(content);
+    const rc = JSON.parse(content);
+    cachedRc = { rc, mtime: stat.mtimeMs, checked: Date.now() };
+    return rc;
   } catch {
     return { active: 'default', profiles: {} };
   }
@@ -40,6 +47,7 @@ function readRcFile(): RcFile {
 
 function writeRcFile(rc: RcFile): void {
   fs.writeFileSync(rcFilePath, JSON.stringify(rc, null, 2) + '\n');
+  cachedRc = null;
 }
 
 function resolveProfileName(args: MinimistArgs): string {
@@ -138,13 +146,4 @@ export function createProfile(name: string): void {
     throw new Error(`Profile '${name}' already exists`);
   rc.profiles[name] = { subdomain: '', email: '' };
   writeRcFile(rc);
-}
-
-export function listProfiles(): string[] {
-  const rc = readRcFile();
-  return Object.keys(rc.profiles);
-}
-
-export function resolveActiveProfileName(): string {
-  return readRcFile().active;
 }
