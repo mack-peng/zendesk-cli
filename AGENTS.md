@@ -35,7 +35,7 @@ src/
 - **Output strategy**: `Output` interface → `TextOutput` (human-readable tables for arrays, JSON for objects, `--raw` skips formatting) / `JsonOutput` (machine-readable JSON)
 - **Config priority**: CLI flags → env vars → `~/.zendeskrc` profiles. Switch with `-p <profile>`.
 - **Auth modes**: `api-token` (default, `email/token:token` base64), `basic` (`email:password` base64), `oauth` (Bearer token)
-- **3 command categories**: API commands (dispatched to `ZendeskClient`), local config commands (Zod-validated then dispatched locally), `ticket-thread` (multi-API composition)
+- **3 command categories**: API commands (dispatched to `ZendeskClient`), local config commands (Zod-validated then dispatched locally), `ticket-thread` (multi-API composition: fetches ticket + comments, injects into `_comments` field)
 - **Schema flags**:
   - `list: true` → automatic cursor pagination (traverse all pages, merge results)
   - `upload: true` → multipart file upload dispatch

@@ -68,7 +68,7 @@ zcli-ticket config-list                 # List all profiles
 zcli-ticket ticket-list --status open
 zcli-ticket ticket-show 12345
 zcli-ticket user-me
-zcli-ticket ticket-thread 12345         # Ticket + all comments
+zcli-ticket ticket-thread 12345         # Ticket + all comments → _comments field
 ```
 
 ---
@@ -149,7 +149,7 @@ zcli-ticket ticket-list --sort-by updated_at --sort-order desc
 zcli-ticket ticket-list-recent                           # Recently updated
 zcli-ticket ticket-show 12345                            # Single ticket
 zcli-ticket ticket-show-many 1,2,3                       # Multiple tickets
-zcli-ticket ticket-thread 12345                          # Ticket + all comments
+zcli-ticket ticket-thread 12345                          # Ticket + all comments → _comments field
 zcli-ticket ticket-create "Subject" "Description"        # Create
 zcli-ticket ticket-create "Subject" "Body" --priority urgent --tags urgent,printer
 zcli-ticket ticket-create-many tickets.json              # Bulk create from JSON file
